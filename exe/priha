@@ -1,0 +1,85 @@
+#!/usr/bin/env ruby
+require 'yaml'
+require 'priha'
+
+include Priha
+
+config_file = if /mswin|msys|mingw|cygwin|bccwin|wince|emc/ =~ RUBY_PLATFORM
+                File.join(ENV['USERPROFILE'], '.priha_config.yml')
+              else
+                File.join(ENV['HOME'], '.priha_config.yml')
+              end
+
+unless File.exist?(config_file)
+  STDERR.puts <<-EOS
+ERROR: #{config_file} is not found.
+
+Priha requires #{config_file} where your GitHub information is set like the followings.
+
+-------------------------------------------------------------------------------
+username: <your github username>
+repo: <your github repository to push for a temporary pull request>
+parent_branch: <default parent branch to merge> (optional)
+access_token: <your github access token> (optional)
+-------------------------------------------------------------------------------
+
+Note that you can specify parent_branch by passing that name as an argument,
+and access_token will be overwritten by "GITHUB_ACCESS_TOKEN" environment variable when exists.
+  EOS
+  exit 1
+end
+
+config = YAML.load_file(config_file)
+
+errors = %w(username repo parent_branch access_token).each_with_object({}) do |i, a|
+  a[i] = "not set" unless config.include?(i)
+end
+
+if ARGV[0]
+  config['parent_branch'] = ARGV[0]
+  errors.delete('parent_branch')
+end
+
+if ENV['GITHUB_ACCESS_TOKEN']
+  config['access_token'] = ENV['GITHUB_ACCESS_TOKEN']
+  errors.delete('access_token')
+end
+
+unless errors.empty?
+  errors.each { |k, v| STDERR.puts "ERROR: #{k} is #{v}" }
+  exit 1
+end
+
+client = Octokit::Client.new(access_token: config['access_token'])
+
+# Remove all branches
+client.branches("#{config['username']}/#{config['repo']}").each do |branch|
+  client.delete_branch("#{config['username']}/#{config['repo']}", branch.name)
+end
+
+if config['parent_branch'] == current_branch
+  STDERR.puts "ERROR: #{config['parent_branch']} and #{current_branch} are identical"
+  exit 1
+end
+
+puts 'Pushing branches. It may takes a while...'
+
+add_remote(config['access_token'], config['username'], config['repo'])
+push(config['parent_branch'], "#{config['parent_branch']}-#{IDENTIFIER}")
+push(current_branch, "#{current_branch}-#{IDENTIFIER}")
+remove_remote
+
+client.create_pull_request(
+  "#{config['username']}/#{config['repo']}",
+  "#{config['parent_branch']}-#{IDENTIFIER}",
+  "#{current_branch}-#{IDENTIFIER}",
+  "Pull Request Rehearsal",
+  "This is a pull request rehearsal for a life."
+)
+
+files_url = client.pull_requests("#{config['username']}/#{config['repo']}", state: 'open').first.html_url + '/files'
+puts files_url
+
+if /darwin|mac os/ =~ RUBY_PLATFORM
+  `open #{files_url}`
+end
