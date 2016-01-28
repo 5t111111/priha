@@ -1,5 +1,4 @@
 require 'securerandom'
-require 'octokit'
 require "priha/version"
 require 'priha/git_command'
 

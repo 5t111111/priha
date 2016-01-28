@@ -1,5 +1,6 @@
 #!/usr/bin/env ruby
 require 'yaml'
+require 'octokit'
 require 'priha'
 
 include Priha
@@ -29,6 +30,7 @@ and access_token will be overwritten by "GITHUB_ACCESS_TOKEN" environment variab
   exit 1
 end
 
+# TODO: handle when config_file is empry
 config = YAML.load_file(config_file)
 
 errors = %w(username repo parent_branch access_token).each_with_object({}) do |i, a|
